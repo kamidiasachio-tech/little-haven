@@ -44,7 +44,18 @@ function App() {
     chief_complaint: "", anamnesis: "", vitals: "", diagnosis: "",
     treatment: "", medication: "", clinical_notes: "", follow_up: ""
   });
-
+const [staffList, setStaffList] = useState([]);
+const [staffLoading, setStaffLoading] = useState(false);
+const [staffForm, setStaffForm] = useState({
+  full_name: "",
+  position: "",
+  phone: "",
+  shift_label: "",
+  work_days: "",
+  employment_status: "active",
+  notes: ""
+});
+const [editingStaff, setEditingStaff] = useState(null);
   const role = profile?.role || "Doctor";
   const demoMode = !supabase;
 
@@ -68,7 +79,88 @@ function App() {
     }
     setLoading(false);
   }
+async function loadStaff() {
+  if (!supabase) return;
 
+  setStaffLoading(true);
+
+  const { data, error } = await supabase
+    .from("staff_directory")
+    .select("*")
+    .order("full_name", { ascending: true });
+
+  if (error) {
+    setError(error.message);
+  } else {
+    setStaffList(data || []);
+  }
+
+  setStaffLoading(false);
+}
+  
+async function saveStaff(e) {
+  e.preventDefault();
+
+  if (!supabase) {
+    flash("Supabase belum terhubung.");
+    return;
+  }
+
+  if (!staffForm.full_name.trim() || !staffForm.position.trim()) {
+    flash("Nama dan jabatan wajib diisi.");
+    return;
+  }
+
+  setStaffLoading(true);
+  setError("");
+
+  const payload = {
+    ...staffForm,
+    full_name: staffForm.full_name.trim(),
+    position: staffForm.position.trim(),
+    created_by: session.user.id
+  };
+
+  let result;
+
+  if (editingStaff) {
+    const { created_by, ...updatePayload } = payload;
+
+    result = await supabase
+      .from("staff_directory")
+      .update({
+        ...updatePayload,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", editingStaff.id);
+  } else {
+    result = await supabase
+      .from("staff_directory")
+      .insert(payload);
+  }
+
+  if (result.error) {
+    flash(result.error.message);
+  } else {
+    flash(editingStaff ? "Data staf berhasil diperbarui." : "Staf berhasil ditambahkan.");
+
+    setStaffForm({
+      full_name: "",
+      position: "",
+      phone: "",
+      shift_label: "",
+      work_days: "",
+      employment_status: "active",
+      notes: ""
+    });
+
+    setEditingStaff(null);
+    await loadStaff();
+  }
+
+  setStaffLoading(false);
+}
+  
   useEffect(() => {
     if (!supabase) return;
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -82,7 +174,11 @@ function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
-
+  useEffect(() => {
+    if (session?.user && section === "Staff & Accounts") {
+      loadStaff();
+    }
+  }, [session, section]);
   useEffect(() => {
     async function getProfile() {
       if (!session?.user) { setProfile(null); return; }
